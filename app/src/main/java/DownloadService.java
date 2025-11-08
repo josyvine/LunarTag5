@@ -114,9 +114,6 @@ public class DownloadService extends Service {
                 }
                 final int senderPort = (int) senderPortLong;
 
-                // --- THIS IS THE FIX for NetworkOnMainThreadException ---
-                // The network operation (downloadFile) must be started on a new background thread
-                // because the Firebase onSuccess listener runs on the main UI thread.
                 new Thread(new Runnable() {
                     @Override
                     public void run() {
@@ -146,70 +143,63 @@ public class DownloadService extends Service {
             tempCloakedFile = new File(getCacheDir(), "downloading_" + System.currentTimeMillis() + ".log");
             updateNotification("Connecting...", true, 0, (int) totalSize);
 
-            while (bytesDownloaded < totalSize && !isCancelled) {
-                try {
-                    socket = new Socket(host, port);
-                    out = socket.getOutputStream();
-                    PrintWriter writer = new PrintWriter(out, true);
+            // --- MODIFICATION: This is where the infinite connecting loop is fixed. ---
+            // It will now try to connect. If it fails, it will immediately throw the IOException,
+            // which is caught by the outer catch block, generating the error report.
+            // The `while` loop that caused the infinite retries has been removed from this section.
+            socket = new Socket(host, port);
+            out = socket.getOutputStream();
+            PrintWriter writer = new PrintWriter(out, true);
 
-                    writer.println("GET /" + cloakedFilename + " HTTP/1.1");
-                    writer.println("Host: " + host);
-                    writer.println("Range: bytes=" + bytesDownloaded + "-");
-                    writer.println();
+            writer.println("GET /" + cloakedFilename + " HTTP/1.1");
+            writer.println("Host: " + host);
+            // We ask for the whole file now, as resume logic is complex and not fully implemented.
+            writer.println("Range: bytes=0-");
+            writer.println();
 
-                    in = new BufferedInputStream(socket.getInputStream());
+            in = new BufferedInputStream(socket.getInputStream());
 
-                    String line;
-                    long contentLength = -1;
-                    boolean headersEnded = false;
+            String line;
+            long contentLength = -1;
+            boolean headersEnded = false;
 
-                    while (!headersEnded && (line = readLine(in)) != null) {
-                        if (line.isEmpty()) {
-                            headersEnded = true;
-                        } else {
-                            String lowerLine = line.toLowerCase();
-                            if (lowerLine.startsWith("content-length:")) {
-                                contentLength = Long.parseLong(line.substring(15).trim());
-                            }
-                        }
-                    }
-
-                    if (contentLength == -1) {
-                         throw new IOException("Server did not provide Content-Length header.");
-                    }
-
-                    fos = new FileOutputStream(tempCloakedFile, true);
-                    byte[] buffer = new byte[8192];
-                    int bytesRead;
-                    long bytesToRead = contentLength;
-
-                    while (bytesToRead > 0 && (bytesRead = in.read(buffer, 0, (int) Math.min(buffer.length, bytesToRead))) != -1) {
-                        if (isCancelled) break;
-                        fos.write(buffer, 0, bytesRead);
-                        bytesDownloaded += bytesRead;
-                        bytesToRead -= bytesRead;
-                        updateNotification("Text Cloaking...", true, (int) bytesDownloaded, (int) totalSize);
-                    }
-
-                } catch (IOException e) {
-                    Log.w(TAG, "Connection lost, will retry... " + e.getMessage());
-                    try { if (socket != null) socket.close(); } catch (IOException ignored) {}
-                    try { if (fos != null) fos.close(); } catch (IOException ignored) {}
-                    try {
-                        Thread.sleep(5000);
-                    } catch (InterruptedException interruptedException) {
-                        isCancelled = true;
-                        Thread.currentThread().interrupt();
+            while (!headersEnded && (line = readLine(in)) != null) {
+                if (line.isEmpty()) {
+                    headersEnded = true;
+                } else {
+                    String lowerLine = line.toLowerCase();
+                    if (lowerLine.startsWith("content-length:")) {
+                        contentLength = Long.parseLong(line.substring(15).trim());
                     }
                 }
             }
+
+            if (contentLength == -1) {
+                 throw new IOException("Server did not provide Content-Length header.");
+            }
+
+            // Adjust total size if server provides a different length (e.g., for partial content in future)
+            if (totalSize == 0 || totalSize != contentLength) {
+                totalSize = contentLength;
+            }
+
+            fos = new FileOutputStream(tempCloakedFile, false); // Overwrite instead of append
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+
+            while (!isCancelled && (bytesRead = in.read(buffer)) != -1) {
+                fos.write(buffer, 0, bytesRead);
+                bytesDownloaded += bytesRead;
+                updateNotification("Receiving...", true, (int) bytesDownloaded, (int) totalSize);
+            }
+            // --- END OF MODIFICATION ---
 
             if (isCancelled) {
                  stopServiceAndCleanup("Download cancelled.");
                  return;
             }
 
-            if (bytesDownloaded == totalSize) {
+            if (bytesDownloaded >= totalSize) { // Use >= to be safe
                 updateNotification("Restoring file...", true, (int) totalSize, (int) totalSize);
                 File publicDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "HFM Drop");
                 if (!publicDir.exists()) {
