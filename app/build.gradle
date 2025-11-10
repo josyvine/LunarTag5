@@ -16,13 +16,14 @@ android {
     buildTypes {
         release {
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules-pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        // Updated to Java 17 for jlibtorrent 2.x compatibility
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 
     packagingOptions {
@@ -81,7 +82,7 @@ dependencies {
     implementation 'com.google.firebase:firebase-auth'
     implementation 'com.google.firebase:firebase-firestore'
 
-    // TORRENT CLIENT - Updated to Maven-supported 2.0.12.7 (latest as of Nov 2025)
+    // TORRENT CLIENT - Maven-supported 2.0.12.7 (latest)
     def jlibtorrentVersion = "2.0.12.7"
     implementation "com.frostwire:jlibtorrent:$jlibtorrentVersion"
     implementation "com.frostwire:jlibtorrent-android-arm64:$jlibtorrentVersion"
