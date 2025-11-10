@@ -17,11 +17,14 @@ import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
+import com.safevoice.app.models.Contact;
+import com.safevoice.app.utils.ContactsManager;
 import com.safevoice.app.utils.LocationHelper;
 
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.List;
 
 /**
  * This service is responsible for handling the emergency alert logic.
@@ -45,17 +48,12 @@ public class EmergencyHandlerService extends Service {
         Log.i(TAG, "Emergency sequence initiated.");
         Toast.makeText(this, "Emergency Triggered! Sending alerts...", Toast.LENGTH_LONG).show();
 
-        // Check for necessary permissions before proceeding.
         if (!hasRequiredPermissions()) {
             Log.e(TAG, "Cannot proceed with emergency alerts. Missing permissions.");
-            stopSelf(); // Stop the service if permissions are missing.
+            stopSelf();
             return START_NOT_STICKY;
         }
 
-        // Use the LocationHelper to get the current location.
-        // The callback will handle the rest of the emergency logic.
-        // --- THIS IS THE FIX ---
-        // Changed "LocationCallback" to the correct name "LocationResultCallback"
         locationHelper.getCurrentLocation(new LocationHelper.LocationResultCallback() {
             @Override
             public void onLocationResult(Location location) {
@@ -64,16 +62,12 @@ public class EmergencyHandlerService extends Service {
                     executeEmergencyActions(location);
                 } else {
                     Log.e(TAG, "Failed to acquire location. Sending alerts without it.");
-                    // Even if location fails, we should still send alerts.
                     executeEmergencyActions(null);
                 }
-                // The service has completed its task.
                 stopSelf();
             }
         });
 
-        // We return START_NOT_STICKY because this is a one-off task.
-        // We don't want it to restart if it's killed.
         return START_NOT_STICKY;
     }
 
@@ -83,21 +77,31 @@ public class EmergencyHandlerService extends Service {
      * @param location The user's current location. Can be null if fetching failed.
      */
     private void executeEmergencyActions(Location location) {
-        // TODO: Replace these hardcoded contacts with a real ContactsManager that reads from SharedPreferences or a database.
-        String primaryContactPhone = "911"; // Placeholder
-        Map<String, String> priorityContacts = new HashMap<>(); // Placeholder
-        priorityContacts.put("Mom", "5551234567");
-        priorityContacts.put("Dad", "5557654321");
+        // --- THIS IS THE FIX ---
+        // Get the singleton instance of the ContactsManager.
+        ContactsManager contactsManager = ContactsManager.getInstance(this);
 
-        // Make the primary phone call regardless of network state.
-        makePhoneCall(primaryContactPhone);
+        // Retrieve the saved contacts instead of using hardcoded placeholders.
+        Contact primaryContact = contactsManager.getPrimaryContact();
+        List<Contact> priorityContacts = contactsManager.getPriorityContacts();
 
-        // Check for internet connectivity.
+        // Make the primary phone call.
+        if (primaryContact != null) {
+            makePhoneCall(primaryContact.getPhoneNumber());
+        } else {
+            Log.w(TAG, "No primary contact set. Cannot make emergency call.");
+        }
+
+        // Check for internet connectivity (though SMS doesn't strictly need it, it's good practice).
         if (isOnline()) {
             Log.d(TAG, "Device is online. Sending SMS alerts.");
-            // If online, send SMS alerts to all priority contacts.
-            for (String phone : priorityContacts.values()) {
-                sendSmsAlert(phone, location);
+            // Send SMS alerts to all priority contacts.
+            if (priorityContacts != null && !priorityContacts.isEmpty()) {
+                for (Contact contact : priorityContacts) {
+                    sendSmsAlert(contact.getPhoneNumber(), location);
+                }
+            } else {
+                Log.w(TAG, "No priority contacts set. Cannot send SMS alerts.");
             }
         } else {
             Log.d(TAG, "Device is offline. Only primary phone call was made.");
@@ -111,7 +115,7 @@ public class EmergencyHandlerService extends Service {
      */
     private void makePhoneCall(String phoneNumber) {
         if (phoneNumber == null || phoneNumber.isEmpty()) {
-            Log.e(TAG, "Primary contact phone number is not set. Cannot make call.");
+            Log.e(TAG, "Phone number is invalid. Cannot make call.");
             return;
         }
 
@@ -140,9 +144,18 @@ public class EmergencyHandlerService extends Service {
             Log.e(TAG, "Priority contact phone number is invalid. Cannot send SMS.");
             return;
         }
+        
+        // --- THIS IS THE FIX ---
+        // Get the user's name dynamically for a personalized message.
+        FirebaseUser currentUser = FirebaseAuth.getInstance().getCurrentUser();
+        String userName = "the user"; // Default name
+        if (currentUser != null && currentUser.getDisplayName() != null && !currentUser.getDisplayName().isEmpty()) {
+            // We use the Google display name. In a more advanced version,
+            // you would fetch the "verifiedName" from Firestore.
+            userName = currentUser.getDisplayName();
+        }
 
-        // TODO: Replace "User" with the verified name from Firebase.
-        String message = "EMERGENCY: This is an automated alert from Safe Voice for User. They may be in trouble.";
+        String message = "EMERGENCY: This is an automated alert from Safe Voice for " + userName + ". They may be in trouble.";
 
         if (location != null) {
             String mapLink = "https://maps.google.com/?q=" + location.getLatitude() + "," + location.getLongitude();
@@ -150,9 +163,7 @@ public class EmergencyHandlerService extends Service {
         }
 
         try {
-            // Use the default SmsManager to send the text message.
             SmsManager smsManager = SmsManager.getDefault();
-            // For longer messages, use divideMessage to split it into parts.
             ArrayList<String> messageParts = smsManager.divideMessage(message);
             smsManager.sendMultipartTextMessage(phoneNumber, null, messageParts, null, null);
             Log.i(TAG, "SMS alert sent to " + phoneNumber);
@@ -161,11 +172,6 @@ public class EmergencyHandlerService extends Service {
         }
     }
 
-    /**
-     * Checks if the device has an active internet connection.
-     *
-     * @return true if connected, false otherwise.
-     */
     private boolean isOnline() {
         ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         if (cm == null) return false;
@@ -173,11 +179,6 @@ public class EmergencyHandlerService extends Service {
         return netInfo != null && netInfo.isConnectedOrConnecting();
     }
 
-    /**
-     * Checks if the service has the permissions it needs to function.
-     *
-     * @return true if all required permissions are granted.
-     */
     private boolean hasRequiredPermissions() {
         return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED &&
                ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED &&
@@ -187,7 +188,6 @@ public class EmergencyHandlerService extends Service {
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
-        // This is a started service, not a bound one.
         return null;
     }
 }
