@@ -18,12 +18,10 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # THIS NEW STEP DECODES YOUR SECRET KEY FILE FROM GITHUB SECRETS
       - name: Decode Keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ${{ github.workspace }}/safevoice.jks
 
-      # THIS STEP IS MODIFIED TO BUILD THE RELEASE VERSION USING YOUR KEY
       - name: Build Release APK
         uses: gradle/gradle-build-action@v2
         env:
@@ -36,7 +34,6 @@ jobs:
           cache-disabled: true
           arguments: app:assembleRelease
 
-      # THIS STEP IS MODIFIED TO UPLOAD THE NEW RELEASE APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
