@@ -1,4 +1,3 @@
-
 package com.safevoice.app.models;
 
 import androidx.annotation.Nullable;
@@ -6,7 +5,7 @@ import androidx.annotation.Nullable;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.util.Objects; 
+import java.util.Objects;
 
 /**
  * A simple data model class (POJO) to represent an emergency contact.
@@ -17,21 +16,19 @@ public class Contact {
 
     private static final String JSON_KEY_NAME = "name";
     private static final String JSON_KEY_PHONE = "phoneNumber";
-    private static final String JSON_KEY_UID = "uid"; // New key for Firebase User ID
+    private static final String JSON_KEY_UID = "uid";
 
     private String name;
     private String phoneNumber;
-    private String uid; // New field for Firebase User ID
+    private String uid;
 
-    // Original constructor for phone-only contacts (e.g., primary contact)
     public Contact(String name, String phoneNumber) {
         this.name = name;
         this.phoneNumber = phoneNumber;
-        this.uid = null; // This contact is not a linked Safe Voice user
+        this.uid = null; // Ensure uid is null for the original constructor
     }
 
-    // New constructor for linked Safe Voice users
-    public Contact(String name, String phoneNumber, @Nullable String uid) {
+    public Contact(String name, String phoneNumber, String uid) {
         this.name = name;
         this.phoneNumber = phoneNumber;
         this.uid = uid;
@@ -46,7 +43,6 @@ public class Contact {
         return phoneNumber;
     }
 
-    @Nullable
     public String getUid() {
         return uid;
     }
@@ -60,10 +56,9 @@ public class Contact {
         this.phoneNumber = phoneNumber;
     }
 
-    public void setUid(@Nullable String uid) {
+    public void setUid(String uid) {
         this.uid = uid;
     }
-
 
     /**
      * Converts this Contact object into a JSONObject.
@@ -76,7 +71,7 @@ public class Contact {
         try {
             jsonObject.put(JSON_KEY_NAME, this.name);
             jsonObject.put(JSON_KEY_PHONE, this.phoneNumber);
-            // Use putOpt to safely handle null uid
+            // Use putOpt so it doesn't add the key if the value is null
             jsonObject.putOpt(JSON_KEY_UID, this.uid);
             return jsonObject;
         } catch (JSONException e) {
@@ -96,7 +91,7 @@ public class Contact {
         try {
             String name = jsonObject.getString(JSON_KEY_NAME);
             String phone = jsonObject.getString(JSON_KEY_PHONE);
-            // Use optString to safely retrieve the uid, defaulting to null if not present
+            // Use optString to safely get the uid, returns an empty string or default if not found
             String uid = jsonObject.optString(JSON_KEY_UID, null);
             return new Contact(name, phone, uid);
         } catch (JSONException e) {
@@ -108,21 +103,22 @@ public class Contact {
     // Overriding equals and hashCode is important for managing lists of contacts,
     // for example, to correctly find and remove a specific contact.
     @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        Contact contact = (Contact) o;
-        // A contact is considered equal if their UIDs match (if they exist),
-        // or if their phone numbers match if UIDs are not present.
+    public boolean equals(@Nullable Object obj) {
+        if (this == obj) return true;
+        if (obj == null || getClass() != obj.getClass()) return false;
+        Contact contact = (Contact) obj;
+        // If UIDs exist, they are the definitive source of truth for equality.
         if (uid != null && contact.uid != null) {
             return uid.equals(contact.uid);
         }
-        return phoneNumber.equals(contact.phoneNumber) && name.equals(contact.name);
+        // Fallback to name and phone for non-app contacts (like primary contact)
+        return Objects.equals(name, contact.name) &&
+               Objects.equals(phoneNumber, contact.phoneNumber);
     }
 
     @Override
     public int hashCode() {
-        // Use Objects.hash for safe hashing of potentially null fields.
+        // Use Objects.hash for safe and correct hash code generation
         return Objects.hash(name, phoneNumber, uid);
     }
 }
