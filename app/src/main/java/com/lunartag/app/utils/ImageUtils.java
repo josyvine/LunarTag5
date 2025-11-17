@@ -37,7 +37,7 @@ public class ImageUtils {
         // Ensure the image format is YUV_420_888, which is standard for camera previews.
         if (image.getFormat() != ImageFormat.YUV_420_888) {
             // This is a fallback for other formats like JPEG, though less common.
-            Image.PlaneProxy[] planes = imageProxy.getPlanes();
+            ImageProxy.PlaneProxy[] planes = imageProxy.getPlanes();
             ByteBuffer buffer = planes[0].getBuffer();
             byte[] bytes = new byte[buffer.remaining()];
             buffer.get(bytes);
