@@ -37,10 +37,16 @@ public class DashboardFragment extends Fragment {
     private static final String KEY_IS_SHIFT_ACTIVE = "is_shift_active";
     private static final String KEY_LAST_ACTION_TIME = "last_action_time";
 
-    // --- FIX: ADD Database Components ---
+    // --- DB Components ---
     private ExecutorService databaseExecutor;
-    private GalleryAdapter galleryAdapter;
+    
+    // Two separate adapters for the two boxes
+    private GalleryAdapter scheduledAdapter;
+    private GalleryAdapter recentAdapter;
+    
+    // Data lists
     private List<Photo> scheduledPhotoList;
+    private List<Photo> recentPhotoList;
 
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
@@ -55,15 +61,23 @@ public class DashboardFragment extends Fragment {
         // Initialize Executor for DB operations
         databaseExecutor = Executors.newSingleThreadExecutor();
         scheduledPhotoList = new ArrayList<>();
+        recentPhotoList = new ArrayList<>();
 
-        // Setup the RecyclerView for horizontal scrolling
-        LinearLayoutManager layoutManager = new LinearLayoutManager(getContext(), LinearLayoutManager.HORIZONTAL, false);
-        binding.recyclerViewRecentPhotos.setLayoutManager(layoutManager);
+        // --- 1. Setup Top Box (Scheduled Sends) ---
+        LinearLayoutManager scheduledManager = new LinearLayoutManager(getContext(), LinearLayoutManager.HORIZONTAL, false);
+        // Using 'recyclerViewScheduledSends' based on your UI text. 
+        // If your XML ID is different, update this variable name.
+        if (binding.recyclerViewScheduledSends != null) {
+            binding.recyclerViewScheduledSends.setLayoutManager(scheduledManager);
+            scheduledAdapter = new GalleryAdapter(getContext(), scheduledPhotoList);
+            binding.recyclerViewScheduledSends.setAdapter(scheduledAdapter);
+        }
 
-        // --- FIX: Initialize Adapter and attach to Recycler ---
-        // We use the existing GalleryAdapter to show thumbnails here
-        galleryAdapter = new GalleryAdapter(getContext(), scheduledPhotoList);
-        binding.recyclerViewRecentPhotos.setAdapter(galleryAdapter);
+        // --- 2. Setup Bottom Box (Recent Photos) ---
+        LinearLayoutManager recentManager = new LinearLayoutManager(getContext(), LinearLayoutManager.HORIZONTAL, false);
+        binding.recyclerViewRecentPhotos.setLayoutManager(recentManager);
+        recentAdapter = new GalleryAdapter(getContext(), recentPhotoList);
+        binding.recyclerViewRecentPhotos.setAdapter(recentAdapter);
 
         // Set click listener for the shift toggle button
         binding.buttonToggleShift.setOnClickListener(new View.OnClickListener() {
@@ -77,34 +91,47 @@ public class DashboardFragment extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
-        // This method is called when the fragment becomes visible.
-        // We load the current status and update the UI here.
+        // Load UI state
         updateUI();
-        // --- FIX: Load data from DB every time screen appears ---
-        loadScheduledPhotos();
+        // Load Data from DB
+        loadDashboardData();
     }
 
     /**
-     * NEW METHOD: Query database for PENDING photos and update the list
+     * Query database for BOTH Scheduled (Pending) and Recent photos.
      */
-    private void loadScheduledPhotos() {
+    private void loadDashboardData() {
         if (getContext() == null) return;
 
         databaseExecutor.execute(() -> {
-            // Query Room Database for Pending photos
             AppDatabase db = AppDatabase.getDatabase(getContext());
+            
+            // 1. Get Pending Photos (For Top Box)
             List<Photo> pendingPhotos = db.photoDao().getPendingPhotos();
+            
+            // 2. Get Recent Photos (For Bottom Box) - Limit to 10
+            List<Photo> recentPhotos = db.photoDao().getRecentPhotos(10);
 
             // Update UI on Main Thread
             new Handler(Looper.getMainLooper()).post(() -> {
                 if (binding != null) {
+                    // Update Scheduled List
                     scheduledPhotoList.clear();
-                    if (pendingPhotos != null && !pendingPhotos.isEmpty()) {
+                    if (pendingPhotos != null) {
                         scheduledPhotoList.addAll(pendingPhotos);
-                        // If you had an "Empty State" text view, you would hide it here
                     }
-                    // Refresh the list on screen
-                    galleryAdapter.notifyDataSetChanged();
+                    if (scheduledAdapter != null) {
+                        scheduledAdapter.notifyDataSetChanged();
+                    }
+
+                    // Update Recent List
+                    recentPhotoList.clear();
+                    if (recentPhotos != null) {
+                        recentPhotoList.addAll(recentPhotos);
+                    }
+                    if (recentAdapter != null) {
+                        recentAdapter.notifyDataSetChanged();
+                    }
                 }
             });
         });
@@ -123,27 +150,12 @@ public class DashboardFragment extends Fragment {
         if (isShiftActive) {
             // Shift is currently running
             binding.buttonToggleShift.setText("End Shift");
-
-            // Format the start time for display
-            String timeStr = "";
-            if (lastActionTime > 0) {
-                SimpleDateFormat sdf = new SimpleDateFormat("hh:mm a", Locale.US);
-                timeStr = " since " + sdf.format(new Date(lastActionTime));
-            }
-            // Optional: Update status text if present in XML
-            // binding.textShiftStatus.setText("On Duty" + timeStr);
-
         } else {
             // Shift is not running
             binding.buttonToggleShift.setText("Start Shift");
-            // binding.textShiftStatus.setText("Off Duty");
         }
     }
 
-    /**
-     * Handles the logic when the button is clicked.
-     * Switches the state from On -> Off or Off -> On.
-     */
     private void toggleShiftState() {
         if (getContext() == null) return;
 
@@ -167,14 +179,13 @@ public class DashboardFragment extends Fragment {
             Toast.makeText(getContext(), "Shift Started. Tracking active.", Toast.LENGTH_SHORT).show();
         }
 
-        // Refresh the UI immediately
         updateUI();
     }
 
     @Override
     public void onDestroyView() {
         super.onDestroyView();
-        binding = null; // Important to prevent memory leaks
+        binding = null; 
         if (databaseExecutor != null) {
             databaseExecutor.shutdown();
         }
