@@ -2,6 +2,7 @@ package com.lunartag.app;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.widget.Toast;
 
@@ -32,12 +33,8 @@ public class MainActivity extends AppCompatActivity {
 
     private ActivityResultLauncher<String[]> permissionLauncher;
 
-    // These are the permissions required for the core functionality of Lunar Tag.
-    private final String[] requiredPermissions = new String[]{
-            Manifest.permission.CAMERA,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION
-    };
+    // We will populate this dynamically based on Android Version to prevent crashes
+    private String[] requiredPermissions;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -45,6 +42,26 @@ public class MainActivity extends AppCompatActivity {
 
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
+
+        // Set up the permissions list based on Android version
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+ (API 33+): Needs READ_MEDIA_IMAGES
+            requiredPermissions = new String[]{
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.READ_MEDIA_IMAGES
+            };
+        } else {
+            // Android 12 and below: Needs WRITE_EXTERNAL_STORAGE
+            requiredPermissions = new String[]{
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+            };
+        }
 
         // NEW: Trigger the Remote Config fetch immediately when the app starts.
         // This replaces the passive FCM listener with an active check.
