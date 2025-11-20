@@ -46,6 +46,7 @@ import com.lunartag.app.databinding.FragmentCameraBinding;
 import com.lunartag.app.model.Photo;
 import com.lunartag.app.utils.ImageUtils;
 import com.lunartag.app.utils.LocationProvider;
+import com.lunartag.app.utils.Scheduler;
 import com.lunartag.app.utils.StorageUtils;
 import com.lunartag.app.utils.WatermarkUtils;
 
@@ -500,7 +501,19 @@ public class CameraFragment extends Fragment {
             }
             AppDatabase db = AppDatabase.getDatabase(getContext());
             PhotoDao dao = db.photoDao();
-            dao.insertPhoto(photo);
+            
+            // --- FIXED: Capture ID and Schedule Alarm ---
+            long id = dao.insertPhoto(photo);
+            
+            logToScreen("System: Scheduling Alarm for Photo ID: " + id);
+            Scheduler.schedulePhotoSend(
+                requireContext(),
+                id,
+                filePath,
+                assignedTime
+            );
+            // --------------------------------------------
+
         } catch (Exception e) {
             logToScreen("DB ERROR: " + e.getMessage());
         }
